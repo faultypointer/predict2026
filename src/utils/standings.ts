@@ -267,42 +267,84 @@ export function calculateThirdPlaceStandings(groups: Group[], allMatches: Match[
 }
 
 /**
- * Greedy matching algorithm to assign the 8 qualified third-place teams to their respective bracket slots:
- * ["3AB", "3CD", "3BE", "3AE", "3CE", "3EH", "3EF", "3DE"]
+ * Bipartite matching algorithm to assign the 8 qualified third-place teams to their respective bracket slots
+ * based on the official FIFA World Cup 2026™ regulations.
+ *
+ * Each slot has a list of allowed groups from which its third-placed team can originate:
+ *   - 3AB (Game 74 - opponent of 1E): A, B, C, D, F
+ *   - 3CD (Game 77 - opponent of 1I): C, D, F, G, H
+ *   - 3BE (Game 81 - opponent of 1D): B, E, F, I, J
+ *   - 3AE (Game 82 - opponent of 1G): A, E, H, I, J
+ *   - 3CE (Game 79 - opponent of 1A): C, E, F, H, I
+ *   - 3EH (Game 80 - opponent of 1L): E, H, I, J, K
+ *   - 3EF (Game 85 - opponent of 1B): E, F, G, I, J
+ *   - 3DE (Game 87 - opponent of 1K): D, E, I, J, L
  */
 export function assignThirdPlaces(qualifiedThirds: { groupId: string; teamId: string }[]): Record<string, string> {
     const slots = [
-        { id: "3AB", groups: ["A", "B"] },
-        { id: "3CD", groups: ["C", "D"] },
-        { id: "3BE", groups: ["B", "E"] },
-        { id: "3AE", groups: ["A", "E"] },
-        { id: "3CE", groups: ["C", "E"] },
-        { id: "3EH", groups: ["E", "H"] },
-        { id: "3EF", groups: ["E", "F"] },
-        { id: "3DE", groups: ["D", "E"] },
+        { id: "3AB", groups: ["A", "B", "C", "D", "F"] },
+        { id: "3CD", groups: ["C", "D", "F", "G", "H"] },
+        { id: "3BE", groups: ["B", "E", "F", "I", "J"] },
+        { id: "3AE", groups: ["A", "E", "H", "I", "J"] },
+        { id: "3CE", groups: ["C", "E", "F", "H", "I"] },
+        { id: "3EH", groups: ["E", "H", "I", "J", "K"] },
+        { id: "3EF", groups: ["E", "F", "G", "I", "J"] },
+        { id: "3DE", groups: ["D", "E", "I", "J", "L"] },
     ];
 
     const assigned: Record<string, string> = {};
-    const usedTeamIds = new Set<string>();
+    const assignedSlots = new Set<string>();
 
-    // Pass 1: Try to assign each slot its preferred group
-    for (const slot of slots) {
-        const matchingTeam = qualifiedThirds.find(
-            (t) => slot.groups.includes(t.groupId) && !usedTeamIds.has(t.teamId)
-        );
-        if (matchingTeam) {
-            assigned[slot.id] = matchingTeam.teamId;
-            usedTeamIds.add(matchingTeam.teamId);
+    // Backtracking search to find a valid assignment that respects allowed group lists
+    function findAssignment(teamIndex: number): boolean {
+        if (teamIndex === qualifiedThirds.length) {
+            return true;
         }
+
+        const team = qualifiedThirds[teamIndex];
+
+        for (const slot of slots) {
+            if (assignedSlots.has(slot.id)) continue;
+
+            if (slot.groups.includes(team.groupId)) {
+                assigned[slot.id] = team.teamId;
+                assignedSlots.add(slot.id);
+
+                if (findAssignment(teamIndex + 1)) {
+                    return true;
+                }
+
+                // Backtrack
+                delete assigned[slot.id];
+                assignedSlots.delete(slot.id);
+            }
+        }
+
+        return false;
     }
 
-    // Pass 2: Fallback for slots that couldn't get their preferred group, fill with next best remaining teams
-    for (const slot of slots) {
-        if (!assigned[slot.id]) {
-            const nextBestTeam = qualifiedThirds.find((t) => !usedTeamIds.has(t.teamId));
-            if (nextBestTeam) {
-                assigned[slot.id] = nextBestTeam.teamId;
-                usedTeamIds.add(nextBestTeam.teamId);
+    const success = findAssignment(0);
+
+    if (!success) {
+        // Fallback to greedy if no perfect matching is found (safety measure)
+        console.warn("Could not find perfect matching for third places, falling back to greedy.");
+        const usedTeamIds = new Set<string>();
+        for (const slot of slots) {
+            const matchingTeam = qualifiedThirds.find(
+                (t) => slot.groups.includes(t.groupId) && !usedTeamIds.has(t.teamId)
+            );
+            if (matchingTeam) {
+                assigned[slot.id] = matchingTeam.teamId;
+                usedTeamIds.add(matchingTeam.teamId);
+            }
+        }
+        for (const slot of slots) {
+            if (!assigned[slot.id]) {
+                const nextBestTeam = qualifiedThirds.find((t) => !usedTeamIds.has(t.teamId));
+                if (nextBestTeam) {
+                    assigned[slot.id] = nextBestTeam.teamId;
+                    usedTeamIds.add(nextBestTeam.teamId);
+                }
             }
         }
     }
