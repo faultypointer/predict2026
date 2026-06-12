@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useTournament } from "../../context/TournamentContext";
 import { teams } from "../../data/teams";
-import { X, Search, Trophy } from "lucide-react";
+import { X, Search, Trophy, Camera } from "lucide-react";
+import { toPng } from "html-to-image";
 
 interface PredictionModalProps {
     matchId: string;
@@ -18,19 +19,52 @@ export default function PredictionModal({ matchId, stage, onClose }: PredictionM
         resolveKnockoutTeam,
         getKnockoutWinner,
         assignTeamToKnockoutSlot,
+        currentProfile,
+        updateMatchComment,
     } = useTournament();
 
     const [searchTerm, setSearchTerm] = useState("");
     const [selectingSide, setSelectingSide] = useState<"home" | "away" | null>(null);
 
-    // 1. Fetch match and resolved teams based on stage
-    if (stage === "groups") {
-        const match = groupMatches.find((m) => m.id === matchId);
-        if (!match) return null;
+    const match = stage === "groups"
+        ? groupMatches.find((m) => m.id === matchId)
+        : knockoutMatches.find((m) => m.id === matchId);
 
-        const homeTeam = teams.find((t) => t.id === match.homeTeamId);
-        const awayTeam = teams.find((t) => t.id === match.awayTeamId);
-        const { homeScore, awayScore } = match.prediction;
+    const [comment, setComment] = useState(match?.prediction?.comment || "");
+    const [isDownloading, setIsDownloading] = useState(false);
+    const shareCardRef = useRef<HTMLDivElement>(null);
+
+    if (!match) return null;
+
+    const handleDownload = async (homeTeamName: string, awayTeamName: string) => {
+        if (!shareCardRef.current) return;
+        setIsDownloading(true);
+        try {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            const dataUrl = await toPng(shareCardRef.current, {
+                pixelRatio: 3,
+                cacheBust: true,
+                backgroundColor: "#020617",
+            });
+            const link = document.createElement("a");
+            link.download = `prediction-${homeTeamName}-vs-${awayTeamName}.png`;
+            link.href = dataUrl;
+            link.click();
+        } catch (error) {
+            console.error("Failed to generate image", error);
+        } finally {
+            setIsDownloading(false);
+        }
+    };
+
+    // Render for Groups Stage
+    if (stage === "groups") {
+        const groupMatch = groupMatches.find((m) => m.id === matchId);
+        if (!groupMatch) return null;
+
+        const homeTeam = teams.find((t) => t.id === groupMatch.homeTeamId);
+        const awayTeam = teams.find((t) => t.id === groupMatch.awayTeamId);
+        const { homeScore, awayScore } = groupMatch.prediction;
 
         const handleScoreChange = (side: "home" | "away", delta: number) => {
             const currentHome = homeScore ?? 0;
@@ -67,7 +101,7 @@ export default function PredictionModal({ matchId, stage, onClose }: PredictionM
                     </div>
 
                     {/* Content */}
-                    <div className="p-6 space-y-6">
+                    <div className="p-6 space-y-5">
                         <div className="flex items-center justify-between gap-4">
                             {/* Home Team */}
                             <div className="flex-1 flex flex-col items-center text-center space-y-2">
@@ -125,22 +159,96 @@ export default function PredictionModal({ matchId, stage, onClose }: PredictionM
                             </div>
                         </div>
 
+                        {/* Commentary Input */}
+                        <div className="space-y-1.5 border-t border-slate-800/50 pt-4">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
+                                Match Analysis / Notes
+                            </label>
+                            <textarea
+                                value={comment}
+                                onChange={(e) => {
+                                    setComment(e.target.value);
+                                    updateMatchComment(matchId, "groups", e.target.value);
+                                }}
+                                placeholder="Write your thoughts or prediction reasoning..."
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50 transition-colors resize-none h-16"
+                            />
+                        </div>
+
                         {/* Action buttons */}
-                        <div className="flex gap-3 pt-2">
-                            {homeScore !== null || awayScore !== null ? (
+                        <div className="flex flex-col gap-2 pt-1">
+                            <div className="flex gap-3">
+                                {homeScore !== null || awayScore !== null ? (
+                                    <button 
+                                        onClick={handleClear}
+                                        className="flex-1 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-850 text-rose-500 font-bold text-xs uppercase tracking-wider transition-all active:scale-95"
+                                    >
+                                        Clear
+                                    </button>
+                                ) : null}
                                 <button 
-                                    onClick={handleClear}
-                                    className="flex-1 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800 text-rose-500 font-bold text-xs uppercase tracking-wider transition-all active:scale-95"
+                                    onClick={onClose}
+                                    className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-slate-950 font-black text-xs uppercase tracking-wider transition-all active:scale-95 shadow-lg shadow-blue-500/10"
                                 >
-                                    Clear prediction
+                                    Done
                                 </button>
-                            ) : null}
-                            <button 
-                                onClick={onClose}
-                                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-slate-950 font-black text-xs uppercase tracking-wider transition-all active:scale-95 shadow-lg shadow-blue-500/10"
-                            >
-                                Done
-                            </button>
+                            </div>
+                            
+                            {(homeScore !== null || awayScore !== null) && (
+                                <button
+                                    onClick={() => handleDownload(homeTeam?.name || "Home", awayTeam?.name || "Away")}
+                                    disabled={isDownloading}
+                                    className="w-full py-2 rounded-xl border border-blue-500/20 hover:border-blue-500/40 bg-blue-950/20 hover:bg-blue-950/30 text-blue-400 font-bold text-xs uppercase tracking-wider transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                                >
+                                    <Camera size={14} className={isDownloading ? "animate-pulse" : ""} />
+                                    <span>{isDownloading ? "Generating Card..." : "Download Match Graphic"}</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Hidden Capture Card */}
+                <div style={{ position: "absolute", top: "-9999px", left: "-9999px" }}>
+                    <div 
+                        ref={shareCardRef} 
+                        className="share-capture-card w-[500px] flex flex-col items-center space-y-6"
+                    >
+                        <div className="text-center space-y-1 w-full">
+                            <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">
+                                FIFA World Cup 2026 Prediction
+                            </span>
+                            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+                                Predicted by {currentProfile}
+                            </h2>
+                        </div>
+                        
+                        <div className="flex items-center justify-between w-full px-6 py-5 bg-slate-900/60 rounded-2xl border border-slate-800/80">
+                            <div className="flex flex-col items-center space-y-2 w-1/3 text-center">
+                                <span className="text-5xl leading-none">{homeTeam?.flag || "🏳️"}</span>
+                                <span className="text-xs font-bold text-white truncate max-w-[120px]">{homeTeam?.name || "TBD"}</span>
+                            </div>
+                            <div className="flex flex-col items-center justify-center w-1/3">
+                                <span className="text-3xl font-black font-mono text-white tracking-widest">
+                                    {homeScore !== null ? homeScore : "-"} : {awayScore !== null ? awayScore : "-"}
+                                </span>
+                            </div>
+                            <div className="flex flex-col items-center space-y-2 w-1/3 text-center">
+                                <span className="text-5xl leading-none">{awayTeam?.flag || "🏳️"}</span>
+                                <span className="text-xs font-bold text-white truncate max-w-[120px]">{awayTeam?.name || "TBD"}</span>
+                            </div>
+                        </div>
+
+                        {comment && (
+                            <div className="w-full bg-slate-900/40 p-4 rounded-xl border border-slate-800/60 text-center">
+                                <p className="text-xs font-medium text-slate-300 italic">
+                                    "{comment}"
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="text-[9px] font-black text-slate-600 uppercase tracking-widest w-full text-center border-t border-slate-900 pt-3">
+                            FIFA World Cup 2026 Bracket Challenger
                         </div>
                     </div>
                 </div>
@@ -148,14 +256,14 @@ export default function PredictionModal({ matchId, stage, onClose }: PredictionM
         );
     } else {
         // KNOCKOUT MATCH VIEW
-        const match = knockoutMatches.find((m) => m.id === matchId);
-        if (!match) return null;
+        const knockoutMatch = knockoutMatches.find((m) => m.id === matchId);
+        if (!knockoutMatch) return null;
 
-        const homeTeam = resolveKnockoutTeam(match, "home");
-        const awayTeam = resolveKnockoutTeam(match, "away");
-        const winnerId = getKnockoutWinner(match);
+        const homeTeam = resolveKnockoutTeam(knockoutMatch, "home");
+        const awayTeam = resolveKnockoutTeam(knockoutMatch, "away");
+        const winnerId = getKnockoutWinner(knockoutMatch);
 
-        const { homeScore, awayScore, winnerId: predictionWinnerId } = match.prediction;
+        const { homeScore, awayScore, winnerId: predictionWinnerId } = knockoutMatch.prediction;
 
         const hasScores = homeScore !== null && awayScore !== null;
         const isTied = hasScores && homeScore === awayScore;
@@ -181,7 +289,6 @@ export default function PredictionModal({ matchId, stage, onClose }: PredictionM
             updateKnockoutMatchPrediction(matchId, null, null, null);
         };
 
-        // Handle backward prediction team selection
         const handleAssignTeam = (teamId: string) => {
             if (!selectingSide) return;
             assignTeamToKnockoutSlot(matchId, selectingSide, teamId);
@@ -189,13 +296,11 @@ export default function PredictionModal({ matchId, stage, onClose }: PredictionM
             setSearchTerm("");
         };
 
-        // Filter and group teams for searchable team selection
         const filteredTeams = teams.filter((t) => {
             const query = searchTerm.toLowerCase();
             return t.name.toLowerCase().includes(query) || t.code.toLowerCase().includes(query);
         });
 
-        // Group filtered teams by groupId
         const groupsList = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
 
         return (
@@ -205,7 +310,7 @@ export default function PredictionModal({ matchId, stage, onClose }: PredictionM
                     <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0">
                         <div>
                             <span className="text-[10px] font-black text-purple-500 uppercase tracking-widest">
-                                {match.stage === "BF" ? "Bronze Play-off" : match.stage === "F" ? "Final" : `${match.stage} - ${match.label}`}
+                                {knockoutMatch.stage === "BF" ? "Bronze Play-off" : knockoutMatch.stage === "F" ? "Final" : `${knockoutMatch.stage} - ${knockoutMatch.label}`}
                             </span>
                             <h3 className="text-sm font-bold text-white uppercase tracking-wider">Predict Knockout Match</h3>
                         </div>
@@ -218,13 +323,13 @@ export default function PredictionModal({ matchId, stage, onClose }: PredictionM
                     </div>
 
                     {/* Scrollable Body */}
-                    <div className="p-6 overflow-y-auto space-y-6 flex-1 scrollbar-thin">
+                    <div className="p-6 overflow-y-auto space-y-5 flex-1 scrollbar-thin">
                         {selectingSide ? (
                             // Backward Team Picker UI
                             <div className="space-y-4 animate-fade-in">
                                 <div className="flex items-center justify-between">
                                     <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                                        Assign Team to {selectingSide === "home" ? match.homeSource.placeholderCode : match.awaySource.placeholderCode}
+                                        Assign Team to {selectingSide === "home" ? knockoutMatch.homeSource.placeholderCode : knockoutMatch.awaySource.placeholderCode}
                                     </h4>
                                     <button 
                                         onClick={() => { setSelectingSide(null); setSearchTerm(""); }}
@@ -315,10 +420,10 @@ export default function PredictionModal({ matchId, stage, onClose }: PredictionM
                                         ) : (
                                             <div className="flex flex-col items-center space-y-3">
                                                 <div className="w-12 h-12 rounded-full border-2 border-dashed border-slate-700 bg-slate-950 flex items-center justify-center text-slate-500 font-mono text-xs font-bold">
-                                                    {match.homeSource.placeholderCode}
+                                                    {knockoutMatch.homeSource.placeholderCode}
                                                 </div>
                                                 <span className="text-xs text-slate-500 font-medium italic">
-                                                    TBD ({match.homeSource.placeholderCode})
+                                                    TBD ({knockoutMatch.homeSource.placeholderCode})
                                                 </span>
                                                 <button 
                                                     onClick={() => setSelectingSide("home")}
@@ -364,10 +469,10 @@ export default function PredictionModal({ matchId, stage, onClose }: PredictionM
                                         ) : (
                                             <div className="flex flex-col items-center space-y-3">
                                                 <div className="w-12 h-12 rounded-full border-2 border-dashed border-slate-700 bg-slate-950 flex items-center justify-center text-slate-500 font-mono text-xs font-bold">
-                                                    {match.awaySource.placeholderCode}
+                                                    {knockoutMatch.awaySource.placeholderCode}
                                                 </div>
                                                 <span className="text-xs text-slate-500 font-medium italic">
-                                                    TBD ({match.awaySource.placeholderCode})
+                                                    TBD ({knockoutMatch.awaySource.placeholderCode})
                                                 </span>
                                                 <button 
                                                     onClick={() => setSelectingSide("away")}
@@ -422,32 +527,113 @@ export default function PredictionModal({ matchId, stage, onClose }: PredictionM
                                     </div>
                                 )}
 
-                                {/* Shortcut buttons for resolved teams to change them easily */}
+                                {/* Commentary Input */}
+                                {homeTeam && awayTeam && (
+                                    <div className="space-y-1.5 border-t border-slate-800/50 pt-4">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
+                                            Match Analysis / Notes
+                                        </label>
+                                        <textarea
+                                            value={comment}
+                                            onChange={(e) => {
+                                                setComment(e.target.value);
+                                                updateMatchComment(matchId, "knockout", e.target.value);
+                                            }}
+                                            placeholder="Write your thoughts or prediction reasoning..."
+                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50 transition-colors resize-none h-16"
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Shortcut info */}
                                 {(homeTeam || awayTeam) && (
-                                    <div className="flex gap-2.5 justify-center py-2 text-[10px] text-slate-500 font-semibold tracking-wider uppercase">
+                                    <div className="flex gap-2.5 justify-center py-1 text-[10px] text-slate-500 font-semibold tracking-wider uppercase">
                                         <span>Click on a flag/team to manually advance them</span>
                                     </div>
                                 )}
 
                                 {/* Action buttons */}
-                                <div className="flex gap-3 pt-2">
-                                    {homeScore !== null || awayScore !== null ? (
+                                <div className="flex flex-col gap-2 pt-1 border-t border-slate-800/50">
+                                    <div className="flex gap-3">
+                                        {homeScore !== null || awayScore !== null ? (
+                                            <button 
+                                                onClick={handleClear}
+                                                className="flex-1 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-850 text-rose-500 font-bold text-xs uppercase tracking-wider transition-all active:scale-95"
+                                            >
+                                                Clear
+                                            </button>
+                                        ) : null}
                                         <button 
-                                            onClick={handleClear}
-                                            className="flex-1 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800 text-rose-500 font-bold text-xs uppercase tracking-wider transition-all active:scale-95"
+                                            onClick={onClose}
+                                            className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-slate-950 font-black text-xs uppercase tracking-wider transition-all active:scale-95 shadow-lg shadow-blue-500/10"
                                         >
-                                            Clear prediction
+                                            Done
                                         </button>
-                                    ) : null}
-                                    <button 
-                                        onClick={onClose}
-                                        className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-slate-950 font-black text-xs uppercase tracking-wider transition-all active:scale-95 shadow-lg shadow-blue-500/10"
-                                    >
-                                        Done
-                                    </button>
+                                    </div>
+
+                                    {homeTeam && awayTeam && (homeScore !== null || awayScore !== null) && (
+                                        <button
+                                            onClick={() => handleDownload(homeTeam.name, awayTeam.name)}
+                                            disabled={isDownloading}
+                                            className="w-full py-2 rounded-xl border border-blue-500/20 hover:border-blue-500/40 bg-blue-950/20 hover:bg-blue-950/30 text-blue-400 font-bold text-xs uppercase tracking-wider transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                                        >
+                                            <Camera size={14} className={isDownloading ? "animate-pulse" : ""} />
+                                            <span>{isDownloading ? "Generating Card..." : "Download Match Graphic"}</span>
+                                        </button>
+                                    )}
                                 </div>
                             </>
                         )}
+                    </div>
+                </div>
+
+                {/* Hidden Capture Card */}
+                <div style={{ position: "absolute", top: "-9999px", left: "-9999px" }}>
+                    <div 
+                        ref={shareCardRef} 
+                        className="share-capture-card w-[500px] flex flex-col items-center space-y-6"
+                    >
+                        <div className="text-center space-y-1 w-full">
+                            <span className="text-[10px] font-black text-purple-500 uppercase tracking-widest">
+                                FIFA World Cup 2026 Knockout Prediction
+                            </span>
+                            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+                                Predicted by {currentProfile}
+                            </h2>
+                        </div>
+                        
+                        <div className="flex items-center justify-between w-full px-6 py-5 bg-slate-900/60 rounded-2xl border border-slate-800/80">
+                            <div className="flex flex-col items-center space-y-2 w-1/3 text-center">
+                                <span className="text-5xl leading-none">{homeTeam?.flag || "🏳️"}</span>
+                                <span className="text-xs font-bold text-white truncate max-w-[120px]">{homeTeam?.name || "TBD"}</span>
+                            </div>
+                            <div className="flex flex-col items-center justify-center w-1/3">
+                                <span className="text-3xl font-black font-mono text-white tracking-widest">
+                                    {homeScore !== null ? homeScore : "-"} : {awayScore !== null ? awayScore : "-"}
+                                </span>
+                                {isTied && winnerId && (
+                                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-blue-500 text-slate-950 font-sans tracking-wide mt-2">
+                                        PEN WINNER: {winnerId === homeTeam?.id ? homeTeam?.name : awayTeam?.name}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex flex-col items-center space-y-2 w-1/3 text-center">
+                                <span className="text-5xl leading-none">{awayTeam?.flag || "🏳️"}</span>
+                                <span className="text-xs font-bold text-white truncate max-w-[120px]">{awayTeam?.name || "TBD"}</span>
+                            </div>
+                        </div>
+
+                        {comment && (
+                            <div className="w-full bg-slate-900/40 p-4 rounded-xl border border-slate-800/60 text-center">
+                                <p className="text-xs font-medium text-slate-300 italic">
+                                    "{comment}"
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="text-[9px] font-black text-slate-600 uppercase tracking-widest w-full text-center border-t border-slate-900 pt-3">
+                            FIFA World Cup 2026 Bracket Challenger
+                        </div>
                     </div>
                 </div>
             </div>

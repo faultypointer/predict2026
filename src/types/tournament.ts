@@ -4,12 +4,14 @@ export interface Team {
     code: string;
     name: string;
     flag: string;
+    fifaRanking: number; // FIFA/Coca-Cola Men's World Ranking (April 2026) — used as final tiebreaker
 }
 
 export interface MatchPrediction {
     homeScore: number | null;
     awayScore: number | null;
     winnerId?: string | null; // For knockout extra-time/penalties or direct winner picking
+    comment?: string;
 }
 
 export interface Match {

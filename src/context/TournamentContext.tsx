@@ -29,18 +29,39 @@ interface TournamentContextType {
     resolveKnockoutTeam: (match: KnockoutMatch, side: "home" | "away") => Team | null;
     getKnockoutWinner: (match: KnockoutMatch) => string | null;
     getKnockoutLoser: (match: KnockoutMatch) => string | null;
+
+    // Profile management
+    profiles: string[];
+    currentProfile: string;
+    createProfile: (name: string) => void;
+    switchProfile: (name: string) => void;
+    deleteProfile: (name: string) => void;
+    renameProfile: (oldName: string, newName: string) => void;
+    updateMatchComment: (matchId: string, stage: "groups" | "knockout", comment: string) => void;
 }
 
 const TournamentContext = createContext<TournamentContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_GROUP_KEY = "wc2026_group_predictions";
-const LOCAL_STORAGE_KNOCKOUT_KEY = "wc2026_knockout_predictions";
-const LOCAL_STORAGE_CUSTOM_ORDERS_KEY = "wc2026_custom_group_orders";
-
 export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    // 1. Core State
+    // 1. Profile state
+    const [profiles, setProfiles] = useState<string[]>(() => {
+        const saved = localStorage.getItem("wc2026_profiles");
+        return saved ? JSON.parse(saved) : ["Guest"];
+    });
+
+    const [currentProfile, setCurrentProfile] = useState<string>(() => {
+        const saved = localStorage.getItem("wc2026_current_profile");
+        return saved || "Guest";
+    });
+
+    const getProfileGroupKey = (profile: string) => `wc2026_${profile}_group_predictions`;
+    const getProfileKnockoutKey = (profile: string) => `wc2026_${profile}_knockout_predictions`;
+    const getProfileCustomOrdersKey = (profile: string) => `wc2026_${profile}_custom_group_orders`;
+
+    // 2. Core State
     const [groupMatches, setGroupMatches] = useState<Match[]>(() => {
-        const saved = localStorage.getItem(LOCAL_STORAGE_GROUP_KEY);
+        const active = localStorage.getItem("wc2026_current_profile") || "Guest";
+        const saved = localStorage.getItem(`wc2026_${active}_group_predictions`);
         if (saved) {
             try {
                 return JSON.parse(saved);
@@ -52,7 +73,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
 
     const [knockoutMatches, setKnockoutMatches] = useState<KnockoutMatch[]>(() => {
-        const saved = localStorage.getItem(LOCAL_STORAGE_KNOCKOUT_KEY);
+        const active = localStorage.getItem("wc2026_current_profile") || "Guest";
+        const saved = localStorage.getItem(`wc2026_${active}_knockout_predictions`);
         if (saved) {
             try {
                 return JSON.parse(saved);
@@ -64,7 +86,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
 
     const [customGroupOrders, setCustomGroupOrders] = useState<Record<string, string[]>>(() => {
-        const saved = localStorage.getItem(LOCAL_STORAGE_CUSTOM_ORDERS_KEY);
+        const active = localStorage.getItem("wc2026_current_profile") || "Guest";
+        const saved = localStorage.getItem(`wc2026_${active}_custom_group_orders`);
         if (saved) {
             try {
                 return JSON.parse(saved);
@@ -75,20 +98,34 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return {};
     });
 
-    // Save to localStorage when state changes
+    // Save profiles list to localStorage
     useEffect(() => {
-        localStorage.setItem(LOCAL_STORAGE_GROUP_KEY, JSON.stringify(groupMatches));
-    }, [groupMatches]);
+        localStorage.setItem("wc2026_profiles", JSON.stringify(profiles));
+    }, [profiles]);
+
+    // Save active profile to localStorage
+    useEffect(() => {
+        localStorage.setItem("wc2026_current_profile", currentProfile);
+    }, [currentProfile]);
+
+    // Save predictions when they change (scoped by active profile)
+    useEffect(() => {
+        if (groupMatches.length > 0) {
+            localStorage.setItem(getProfileGroupKey(currentProfile), JSON.stringify(groupMatches));
+        }
+    }, [groupMatches, currentProfile]);
 
     useEffect(() => {
-        localStorage.setItem(LOCAL_STORAGE_KNOCKOUT_KEY, JSON.stringify(knockoutMatches));
-    }, [knockoutMatches]);
+        if (knockoutMatches.length > 0) {
+            localStorage.setItem(getProfileKnockoutKey(currentProfile), JSON.stringify(knockoutMatches));
+        }
+    }, [knockoutMatches, currentProfile]);
 
     useEffect(() => {
-        localStorage.setItem(LOCAL_STORAGE_CUSTOM_ORDERS_KEY, JSON.stringify(customGroupOrders));
-    }, [customGroupOrders]);
+        localStorage.setItem(getProfileCustomOrdersKey(currentProfile), JSON.stringify(customGroupOrders));
+    }, [customGroupOrders, currentProfile]);
 
-    // 2. Derived Group Standings
+    // 3. Derived Group Standings
     const groupStandings = useMemo(() => {
         const standings: Record<string, StandingsRow[]> = {};
         for (const group of groups) {
@@ -118,7 +155,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return standings;
     }, [groupMatches, customGroupOrders]);
 
-    // 3. Derived Third-place standings
+    // 4. Derived Third-place standings
     const thirdPlaceStandings = useMemo(() => {
         const thirds: ThirdPlaceRow[] = [];
         for (const group of groups) {
@@ -131,8 +168,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             }
         }
         
-        // Sort the 12 third-place teams
-        // Tiebreakers: 1. Points, 2. GD, 3. GF, 4. Wins, 5. Alphabetical
+        // Sort the 12 third-place teams per official FIFA rules:
+        // 1. Points, 2. GD, 3. GF, 4. Team conduct (skipped), 5. FIFA Ranking
         thirds.sort((a, b) => {
             if (b.points !== a.points) {
                 return b.points - a.points;
@@ -143,10 +180,12 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             if (b.goalsFor !== a.goalsFor) {
                 return b.goalsFor - a.goalsFor;
             }
-            if (b.won !== a.won) {
-                return b.won - a.won;
-            }
-            return a.groupId.localeCompare(b.groupId);
+            // FIFA Ranking (lower number = better)
+            const teamA = teams.find((t) => t.id === a.teamId);
+            const teamB = teams.find((t) => t.id === b.teamId);
+            const rankA = teamA?.fifaRanking ?? 999;
+            const rankB = teamB?.fifaRanking ?? 999;
+            return rankA - rankB;
         });
         
         return thirds;
@@ -160,7 +199,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }));
     }, [thirdPlaceStandings]);
 
-    // 4. Derived Third-place Assignments
+    // 5. Derived Third-place Assignments
     const thirdPlaceAssignments = useMemo(() => {
         return assignThirdPlaces(qualifiedThirds);
     }, [qualifiedThirds]);
@@ -229,7 +268,85 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return teams.find((t) => t.id === teamId) || null;
     };
 
-    // 5. Actions
+    // 6. Actions
+    const switchProfile = (profileName: string) => {
+        if (profiles.includes(profileName)) {
+            setCurrentProfile(profileName);
+            // Load state synchronously to prevent async setItem overwrite
+            const savedGroups = localStorage.getItem(getProfileGroupKey(profileName));
+            setGroupMatches(savedGroups ? JSON.parse(savedGroups) : initialGroupMatches);
+
+            const savedKnockouts = localStorage.getItem(getProfileKnockoutKey(profileName));
+            setKnockoutMatches(savedKnockouts ? JSON.parse(savedKnockouts) : initialKnockoutMatches);
+
+            const savedCustomOrders = localStorage.getItem(getProfileCustomOrdersKey(profileName));
+            setCustomGroupOrders(savedCustomOrders ? JSON.parse(savedCustomOrders) : {});
+        }
+    };
+
+    const createProfile = (profileName: string) => {
+        const trimmed = profileName.trim();
+        if (!trimmed) return;
+        if (profiles.includes(trimmed)) return;
+
+        setProfiles((prev) => [...prev, trimmed]);
+        setCurrentProfile(trimmed);
+
+        // Copy current predictions to the new profile as a starting point
+        localStorage.setItem(getProfileGroupKey(trimmed), JSON.stringify(groupMatches));
+        localStorage.setItem(getProfileKnockoutKey(trimmed), JSON.stringify(knockoutMatches));
+        localStorage.setItem(getProfileCustomOrdersKey(trimmed), JSON.stringify(customGroupOrders));
+    };
+
+    const deleteProfile = (profileName: string) => {
+        if (profiles.length <= 1) return; // Cannot delete the last profile
+        
+        const updatedProfiles = profiles.filter((p) => p !== profileName);
+        setProfiles(updatedProfiles);
+
+        localStorage.removeItem(getProfileGroupKey(profileName));
+        localStorage.removeItem(getProfileKnockoutKey(profileName));
+        localStorage.removeItem(getProfileCustomOrdersKey(profileName));
+
+        if (currentProfile === profileName) {
+            const fallback = updatedProfiles[0];
+            setCurrentProfile(fallback);
+            // Synchronously load fallback profile data
+            const savedGroups = localStorage.getItem(getProfileGroupKey(fallback));
+            setGroupMatches(savedGroups ? JSON.parse(savedGroups) : initialGroupMatches);
+
+            const savedKnockouts = localStorage.getItem(getProfileKnockoutKey(fallback));
+            setKnockoutMatches(savedKnockouts ? JSON.parse(savedKnockouts) : initialKnockoutMatches);
+
+            const savedCustomOrders = localStorage.getItem(getProfileCustomOrdersKey(fallback));
+            setCustomGroupOrders(savedCustomOrders ? JSON.parse(savedCustomOrders) : {});
+        }
+    };
+
+    const renameProfile = (oldName: string, newName: string) => {
+        const trimmed = newName.trim();
+        if (!trimmed || oldName === trimmed) return;
+        if (profiles.includes(trimmed)) return;
+
+        setProfiles((prev) => prev.map((p) => (p === oldName ? trimmed : p)));
+        if (currentProfile === oldName) {
+            setCurrentProfile(trimmed);
+        }
+
+        // Copy keys to new name
+        const groupData = localStorage.getItem(getProfileGroupKey(oldName));
+        if (groupData) localStorage.setItem(getProfileGroupKey(trimmed), groupData);
+        localStorage.removeItem(getProfileGroupKey(oldName));
+
+        const koData = localStorage.getItem(getProfileKnockoutKey(oldName));
+        if (koData) localStorage.setItem(getProfileKnockoutKey(trimmed), koData);
+        localStorage.removeItem(getProfileKnockoutKey(oldName));
+
+        const orderData = localStorage.getItem(getProfileCustomOrdersKey(oldName));
+        if (orderData) localStorage.setItem(getProfileCustomOrdersKey(trimmed), orderData);
+        localStorage.removeItem(getProfileCustomOrdersKey(oldName));
+    };
+
     const updateGroupMatchPrediction = (matchId: string, homeScore: number | null, awayScore: number | null) => {
         setGroupMatches((prev) =>
             prev.map((m) =>
@@ -237,6 +354,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                     ? {
                           ...m,
                           prediction: {
+                              ...m.prediction,
                               homeScore,
                               awayScore,
                           },
@@ -274,6 +392,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 return {
                     ...m,
                     prediction: {
+                        ...m.prediction,
                         homeScore,
                         awayScore,
                         winnerId: calculatedWinnerId,
@@ -289,7 +408,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setGroupMatches((prev) =>
             prev.map((m) =>
                 groupTeamIds.includes(m.homeTeamId)
-                    ? { ...m, prediction: { homeScore: null, awayScore: null } }
+                    ? { ...m, prediction: { ...m.prediction, homeScore: null, awayScore: null } }
                     : m
             )
         );
@@ -334,6 +453,38 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         });
     };
 
+    const updateMatchComment = (matchId: string, stage: "groups" | "knockout", comment: string) => {
+        if (stage === "groups") {
+            setGroupMatches((prev) =>
+                prev.map((m) =>
+                    m.id === matchId
+                        ? {
+                              ...m,
+                              prediction: {
+                                  ...m.prediction,
+                                  comment: comment || undefined,
+                              },
+                          }
+                        : m
+                )
+            );
+        } else {
+            setKnockoutMatches((prev) =>
+                prev.map((m) =>
+                    m.id === matchId
+                        ? {
+                              ...m,
+                              prediction: {
+                                  ...m.prediction,
+                                  comment: comment || undefined,
+                              },
+                          }
+                        : m
+                )
+            );
+        }
+    };
+
     return (
         <TournamentContext.Provider
             value={{
@@ -352,6 +503,13 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 resolveKnockoutTeam,
                 getKnockoutWinner,
                 getKnockoutLoser,
+                profiles,
+                currentProfile,
+                createProfile,
+                switchProfile,
+                deleteProfile,
+                renameProfile,
+                updateMatchComment,
             }}
         >
             {children}

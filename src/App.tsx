@@ -6,9 +6,7 @@ import KnockoutPage from "./pages/KnockoutPage";
 import { getTeamById } from "./utils/teams";
 
 function AppContent() {
-    // Custom Router State
     const [route, setRoute] = useState<{ page: string; groupId?: string }>(() => {
-        // Initial route parsing
         const hash = window.location.hash;
         if (hash.startsWith("#/groups/")) {
             const groupId = hash.substring(9).toUpperCase();
@@ -20,9 +18,21 @@ function AppContent() {
         return { page: "groups" };
     });
 
-    const { groupMatches, knockoutMatches, resetAllPredictions, getKnockoutWinner } = useTournament();
+    const {
+        groupMatches,
+        knockoutMatches,
+        resetAllPredictions,
+        getKnockoutWinner,
+        profiles,
+        currentProfile,
+        createProfile,
+        switchProfile,
+        deleteProfile,
+        renameProfile,
+    } = useTournament();
 
-    // Listen to hashchange events
+    const [showProfileMenu, setShowProfileMenu] = useState(false);
+
     useEffect(() => {
         const handleHashChange = () => {
             const hash = window.location.hash;
@@ -40,7 +50,6 @@ function AppContent() {
         return () => window.removeEventListener("hashchange", handleHashChange);
     }, []);
 
-    // Navigation trigger helpers
     const navigate = (page: string, groupId?: string) => {
         if (page === "group" && groupId) {
             window.location.hash = `#/groups/${groupId.toLowerCase()}`;
@@ -51,7 +60,6 @@ function AppContent() {
         }
     };
 
-    // Global Stats Calculation
     const predictedGroupCount = groupMatches.filter(
         (m) => m.prediction.homeScore !== null && m.prediction.awayScore !== null
     ).length;
@@ -84,20 +92,17 @@ function AppContent() {
                     <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate("groups")}>
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-slate-950 shadow-lg shadow-blue-500/20 hover:scale-105 transition-transform duration-300">
                             <svg className="w-5.5 h-5.5 text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M6 4C4.89543 4 4 4.89543 4 6V8C4 9.10457 4.89543 10 6 10H18C19.1046 10 20 9.10457 20 8V6C20 4.89543 19.1046 4 18 4H6Z" fill="currentColor" opacity="0.3"/>
-                                <path d="M12 10V18M12 18H9M12 18H15M8 20H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                                <path d="M18 4H6C4.89543 4 4 4.89543 4 6V8C4 9.10457 4.89543 10 6 10H18C19.1046 10 20 9.10457 20 8V6C20 4.89543 19.1046 4 18 4H6Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                                <path d="M6 4C4.89543 4 4 4.89543 4 6V8C4 9.10457 4.89543 10 6 10H18C19.1046 10 20 9.10457 20 8V6C20 4.89543 19.1046 4 18 4H6Z" fill="currentColor" opacity="0.3" />
+                                <path d="M12 10V18M12 18H9M12 18H15M8 20H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                <path d="M18 4H6C4.89543 4 4 4.89543 4 6V8C4 9.10457 4.89543 10 6 10H18C19.1046 10 20 9.10457 20 8V6C20 4.89543 19.1046 4 18 4H6Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                             </svg>
                         </div>
                         <div>
                             <h1 className="text-base font-extrabold tracking-wide text-white uppercase flex items-center gap-1.5">
-                                FIFA World Cup 2026
-                                <span className="text-[9px] font-black px-2 py-0.5 rounded bg-blue-950 text-blue-400 border border-blue-800/40 tracking-widest uppercase">
-                                    Bracket Challenger
-                                </span>
+                                Predict 26
                             </h1>
                             <p className="text-[9px] text-slate-500 font-extrabold tracking-wider uppercase font-sans">
-                                Elite Tournament Predictor Engine
+                                Predict the 2026 FIFA World Cup
                             </p>
                         </div>
                     </div>
@@ -126,6 +131,88 @@ function AppContent() {
 
                     {/* Right: Real-time Prediction Dashboard */}
                     <div className="flex items-center gap-4">
+                        {/* Profile Selector */}
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-200 hover:text-white font-bold text-xs uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                                title="Manage username prediction instances"
+                            >
+                                👤 <span className="max-w-[85px] truncate">{currentProfile}</span>
+                                <span className="text-[9px] text-slate-500">▼</span>
+                            </button>
+
+                            {showProfileMenu && (
+                                <>
+                                    {/* Overlay backdrop */}
+                                    <div
+                                        className="fixed inset-0 z-30 cursor-default"
+                                        onClick={() => setShowProfileMenu(false)}
+                                    />
+                                    <div className="absolute right-0 mt-2 w-48 rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-2xl z-40 space-y-1">
+                                        <div className="px-2.5 py-1.5 border-b border-slate-900 text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                            Select Profile
+                                        </div>
+
+                                        <div className="max-h-36 overflow-y-auto scrollbar-thin">
+                                            {profiles.map((p) => (
+                                                <button
+                                                    key={p}
+                                                    onClick={() => {
+                                                        switchProfile(p);
+                                                        setShowProfileMenu(false);
+                                                    }}
+                                                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer
+                                                        ${p === currentProfile
+                                                            ? "bg-blue-950/40 text-blue-400 font-bold border border-blue-900/20"
+                                                            : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"}`}
+                                                >
+                                                    <span className="truncate">{p}</span>
+                                                    {p === currentProfile && <span className="text-[10px]">✓</span>}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <div className="border-t border-slate-905 pt-1.5 space-y-0.5">
+                                            <button
+                                                onClick={() => {
+                                                    setShowProfileMenu(false);
+                                                    const name = prompt("Enter username for new prediction profile:");
+                                                    if (name && name.trim()) createProfile(name.trim());
+                                                }}
+                                                className="w-full text-left px-2.5 py-1.5 rounded-lg text-[10px] font-black text-slate-400 hover:text-white hover:bg-slate-900 transition-colors uppercase tracking-wider cursor-pointer"
+                                            >
+                                                + New Profile
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setShowProfileMenu(false);
+                                                    const name = prompt("Enter new username for this profile:", currentProfile);
+                                                    if (name && name.trim()) renameProfile(currentProfile, name.trim());
+                                                }}
+                                                className="w-full text-left px-2.5 py-1.5 rounded-lg text-[10px] font-black text-slate-400 hover:text-white hover:bg-slate-900 transition-colors uppercase tracking-wider cursor-pointer"
+                                            >
+                                                ✎ Rename Profile
+                                            </button>
+                                            {profiles.length > 1 && (
+                                                <button
+                                                    onClick={() => {
+                                                        setShowProfileMenu(false);
+                                                        if (confirm(`Are you sure you want to delete profile "${currentProfile}"? This will erase all its predictions.`)) {
+                                                            deleteProfile(currentProfile);
+                                                        }
+                                                    }}
+                                                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-[10px] font-black text-rose-500 hover:text-rose-400 hover:bg-rose-950/20 transition-colors uppercase tracking-wider cursor-pointer"
+                                                >
+                                                    🗑 Delete Profile
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
                         {/* Progress Stats Widget */}
                         <div className="hidden sm:flex flex-col items-end">
                             <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest">
@@ -133,7 +220,7 @@ function AppContent() {
                             </span>
                             <div className="flex items-center gap-2">
                                 <div className="w-24 h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
-                                    <div 
+                                    <div
                                         className="h-full bg-gradient-to-r from-blue-500 to-cyan-400"
                                         style={{ width: `${(totalPredicted / totalMatches) * 100}%` }}
                                     ></div>
