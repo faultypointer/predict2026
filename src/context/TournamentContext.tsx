@@ -8,6 +8,7 @@ import { teams } from "../data/teams";
 import { calculateGroupStandings, assignThirdPlaces } from "../utils/standings";
 import type { ThirdPlaceRow } from "../utils/standings";
 import { assignTeamToSource } from "../utils/propagation";
+import { exportPredictions as exportData, importPredictions as importData } from "../utils/importExport";
 
 interface TournamentContextType {
     groupMatches: Match[];
@@ -38,6 +39,10 @@ interface TournamentContextType {
     deleteProfile: (name: string) => void;
     renameProfile: (oldName: string, newName: string) => void;
     updateMatchComment: (matchId: string, stage: "groups" | "knockout", comment: string) => void;
+
+    // Import / Export
+    exportPredictions: () => void;
+    importPredictions: () => Promise<void>;
 }
 
 const TournamentContext = createContext<TournamentContextType | undefined>(undefined);
@@ -453,6 +458,53 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         });
     };
 
+    // --- Import / Export ---
+    const exportPredictions = () => {
+        exportData(currentProfile, groupMatches, knockoutMatches, customGroupOrders);
+    };
+
+    const importPredictions = async (): Promise<void> => {
+        let parsed;
+        try {
+            parsed = await importData();
+        } catch (err) {
+            if (err !== "Import cancelled.") {
+                alert(`Import failed: ${err}`);
+            }
+            return;
+        }
+
+        const targetProfile = parsed.profile || currentProfile;
+
+        // If the file was for a different profile, ask the user
+        if (targetProfile !== currentProfile) {
+            const choice = confirm(
+                `The file contains predictions for profile "${targetProfile}".\n\n` +
+                `• OK  — load into current profile "${currentProfile}"\n` +
+                `• Cancel — create / overwrite profile "${targetProfile}"`
+            );
+            if (!choice) {
+                // Create or switch to the embedded profile name
+                if (!profiles.includes(targetProfile)) {
+                    setProfiles((prev) => [...prev, targetProfile]);
+                }
+                setCurrentProfile(targetProfile);
+                localStorage.setItem(getProfileGroupKey(targetProfile), JSON.stringify(parsed.groupMatches));
+                localStorage.setItem(getProfileKnockoutKey(targetProfile), JSON.stringify(parsed.knockoutMatches));
+                localStorage.setItem(getProfileCustomOrdersKey(targetProfile), JSON.stringify(parsed.customGroupOrders));
+                setGroupMatches(parsed.groupMatches);
+                setKnockoutMatches(parsed.knockoutMatches);
+                setCustomGroupOrders(parsed.customGroupOrders ?? {});
+                return;
+            }
+        }
+
+        // Load into current profile
+        setGroupMatches(parsed.groupMatches);
+        setKnockoutMatches(parsed.knockoutMatches);
+        setCustomGroupOrders(parsed.customGroupOrders ?? {});
+    };
+
     const updateMatchComment = (matchId: string, stage: "groups" | "knockout", comment: string) => {
         if (stage === "groups") {
             setGroupMatches((prev) =>
@@ -510,6 +562,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 deleteProfile,
                 renameProfile,
                 updateMatchComment,
+                exportPredictions,
+                importPredictions,
             }}
         >
             {children}

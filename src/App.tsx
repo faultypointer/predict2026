@@ -29,6 +29,8 @@ function AppContent() {
         switchProfile,
         deleteProfile,
         renameProfile,
+        exportPredictions,
+        importPredictions,
     } = useTournament();
 
     const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -107,7 +109,6 @@ function AppContent() {
                         </div>
                     </div>
 
-                    {/* Middle: Navigation Tabs */}
                     <nav className="flex items-center gap-1 bg-slate-900/60 p-1.5 rounded-xl border border-slate-800/80">
                         <button
                             onClick={() => navigate("groups")}
@@ -173,7 +174,7 @@ function AppContent() {
                                             ))}
                                         </div>
 
-                                        <div className="border-t border-slate-905 pt-1.5 space-y-0.5">
+                                        <div className="border-t border-slate-800 pt-1.5 space-y-0.5">
                                             <button
                                                 onClick={() => {
                                                     setShowProfileMenu(false);
@@ -207,6 +208,33 @@ function AppContent() {
                                                     🗑 Delete Profile
                                                 </button>
                                             )}
+                                        </div>
+
+                                        {/* Import / Export */}
+                                        <div className="border-t border-slate-800 pt-1.5 space-y-0.5">
+                                            <div className="px-2.5 py-1 text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                                                Data
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    setShowProfileMenu(false);
+                                                    exportPredictions();
+                                                }}
+                                                className="w-full text-left px-2.5 py-1.5 rounded-lg text-[10px] font-black text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/20 transition-colors uppercase tracking-wider cursor-pointer flex items-center gap-1.5"
+                                                title="Download predictions as a JSON file"
+                                            >
+                                                ↓ Export Predictions
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setShowProfileMenu(false);
+                                                    importPredictions();
+                                                }}
+                                                className="w-full text-left px-2.5 py-1.5 rounded-lg text-[10px] font-black text-sky-400 hover:text-sky-300 hover:bg-sky-950/20 transition-colors uppercase tracking-wider cursor-pointer flex items-center gap-1.5"
+                                                title="Load predictions from a JSON file"
+                                            >
+                                                ↑ Import Predictions
+                                            </button>
                                         </div>
                                     </div>
                                 </>

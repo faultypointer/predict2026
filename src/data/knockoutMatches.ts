@@ -212,16 +212,16 @@ export const initialKnockoutMatches: KnockoutMatch[] = [
         id: "QF_2",
         stage: "QF",
         label: "Match 26",
-        homeSource: { type: "knockout_winner", id: "R16_5", placeholderCode: "Winner Match 21" },
-        awaySource: { type: "knockout_winner", id: "R16_6", placeholderCode: "Winner Match 22" },
+        homeSource: { type: "knockout_winner", id: "R16_3", placeholderCode: "Winner Match 19" },
+        awaySource: { type: "knockout_winner", id: "R16_4", placeholderCode: "Winner Match 20" },
         prediction: { homeScore: null, awayScore: null, winnerId: null }
     },
     {
         id: "QF_3",
         stage: "QF",
         label: "Match 27",
-        homeSource: { type: "knockout_winner", id: "R16_3", placeholderCode: "Winner Match 19" },
-        awaySource: { type: "knockout_winner", id: "R16_4", placeholderCode: "Winner Match 20" },
+        homeSource: { type: "knockout_winner", id: "R16_5", placeholderCode: "Winner Match 21" },
+        awaySource: { type: "knockout_winner", id: "R16_6", placeholderCode: "Winner Match 22" },
         prediction: { homeScore: null, awayScore: null, winnerId: null }
     },
     {
